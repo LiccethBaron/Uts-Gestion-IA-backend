@@ -1,0 +1,151 @@
+// Prisma Schema - Sistema de Gestión Documental y Búsqueda Semántica UTS
+// Modelo de datos oficial según Diagrama Entidad-Relación Institucional
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector"), uuidOssp(map: "uuid-ossp")]
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique @db.VarChar(50)
+  descripcion String?   @db.Text
+  usuarios    Usuario[]
+
+  @@map("roles")
+}
+
+model Usuario {
+  id             String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  rolId          Int        @map("rol_id")
+  nombreCompleto String     @map("nombre_completo") @db.VarChar(150)
+  email          String     @unique @db.VarChar(120)
+  passwordHash   String     @map("password_hash") @db.VarChar(255)
+  estadoActivo   Boolean    @default(true) @map("estado_activo")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  rol            Role       @relation(fields: [rolId], references: [id], onDelete: Restrict)
+  logsUser       LogUser[]
+
+  @@map("usuarios")
+}
+
+model Carpeta {
+  id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  carpetaPadreId String?     @map("carpeta_padre_id") @db.Uuid
+  dropboxId      String      @unique @map("dropbox_id") @db.VarChar(150)
+  nombre         String      @db.VarChar(255)
+  rutaCompleta   String      @map("ruta_completa") @db.Text
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+
+  carpetaPadre   Carpeta?    @relation("JerarquiaCarpetas", fields: [carpetaPadreId], references: [id], onDelete: Cascade)
+  subcarpetas    Carpeta[]   @relation("JerarquiaCarpetas")
+  documentos     Documento[]
+
+  @@index([carpetaPadreId], map: "idx_carpetas_padre")
+  @@map("carpetas")
+}
+
+model Documento {
+  id                        String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  carpetaId                 String             @map("carpeta_id") @db.Uuid
+  codigoDocumental          String?            @map("codigo_documental") @db.VarChar(100)
+  dropboxFileId             String             @unique @map("dropbox_file_id") @db.VarChar(150)
+  nombre                    String             @db.VarChar(255)
+  descripcion               String?            @db.Text
+  formato                   String             @db.VarChar(15)
+  tipo                      String?            @db.VarChar(100)
+  anio                      Int?
+  rutaCompleta              String             @map("ruta_completa") @db.Text
+  hashContenido             String             @map("hash_contenido") @db.VarChar(64)
+  fechaModificacionDropbox  DateTime           @map("fecha_modificacion_dropbox") @db.Timestamptz()
+  createdAt                 DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt                 DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  carpeta                   Carpeta            @relation(fields: [carpetaId], references: [id], onDelete: Restrict)
+  documentosLectura         DocumentoLectura[]
+  documentosVector          DocumentoVector[]
+  logsUser                  LogUser[]
+
+  @@index([nombre, codigoDocumental, anio], map: "idx_documentos_busqueda")
+  @@index([tipo, formato, anio], map: "idx_documentos_filtros")
+  @@map("documentos")
+}
+
+model DocumentoLectura {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  documentoId      String    @map("documento_id") @db.Uuid
+  estadoExtraccion String    @map("estado_extraccion") @db.VarChar(30)
+  hashContenido    String    @map("hash_contenido") @db.VarChar(64)
+  fechaCambio      DateTime  @default(now()) @map("fecha_cambio") @db.Timestamptz()
+  fechaCreacion    DateTime  @default(now()) @map("fecha_creacion") @db.Timestamptz()
+
+  documento        Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@index([documentoId], map: "idx_lectura_doc")
+  @@map("documento_lectura")
+}
+
+model DocumentoVector {
+  id             String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  documentoId    String                   @map("documento_id") @db.Uuid
+  numeroChunk    Int                      @map("numero_chunk")
+  fragmentoTexto String                   @map("fragmento_texto") @db.Text
+  embedding      Unsupported("vector(768)")
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz()
+
+  documento      Documento                @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@map("documento_vector")
+}
+
+model LogUser {
+  id                String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String?    @map("user_id") @db.Uuid
+  documentoId       String?    @map("documento_id") @db.Uuid
+  accion            String     @db.VarChar(50)
+  entidad           String     @db.VarChar(50)
+  contenidoAnterior Json?      @map("contenido_anterior")
+  contenidoNuevo    Json?      @map("contenido_nuevo")
+  fechaCreacion     DateTime   @default(now()) @map("fecha_creacion") @db.Timestamptz()
+
+  usuario           Usuario?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  documento         Documento? @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+
+  @@index([fechaCreacion], map: "idx_logs_user_fecha")
+  @@index([accion, entidad], map: "idx_logs_user_accion")
+  @@map("logs_user")
+}
+
+model LogSincronizacionCronJ {
+  id              String                          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  fechaInicio     DateTime                        @map("fecha_inicio") @db.Timestamptz()
+  fechaFin        DateTime?                       @map("fecha_fin") @db.Timestamptz()
+  estado          String                          @db.VarChar(30)
+  totalDetectados Int                             @default(0) @map("total_detectados")
+  totalProcesados Int                             @default(0) @map("total_procesados")
+  totalFallidos   Int                             @default(0) @map("total_fallidos")
+
+  detalles        DetalleSincronizacionCronJ[]
+
+  @@map("logs_sincronizacion_cron_j")
+}
+
+model DetalleSincronizacionCronJ {
+  id                   String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  logSincronizacionId  String                 @map("log_sincronizacion_id") @db.Uuid
+  archivoRuta          String                 @map("archivo_ruta") @db.Text
+  operacion            String                 @db.VarChar(30)
+  mensajeError         String?                @map("mensaje_error") @db.Text
+
+  log                  LogSincronizacionCronJ @relation(fields: [logSincronizacionId], references: [id], onDelete: Cascade)
+
+  @@map("detalles_sincronizacion_cron_j")
+}
