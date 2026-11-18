@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+try {
+  process.loadEnvFile();
+} catch {
+  // Permite continuar si el archivo .env no existe (ej. variables inyectadas en despliegue)
+}
+
 const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -10,7 +16,8 @@ const EnvSchema = z.object({
   DROPBOX_CLIENT_ID: z.string().optional(),
   DROPBOX_CLIENT_SECRET: z.string().optional(),
   DROPBOX_REFRESH_TOKEN: z.string().optional(),
-  DROPBOX_FOLDER_PATH: z.string().default('/UTS_DOCUMENTACION_OFICIAL'),
+  DROPBOX_ACCESS_TOKEN: z.string().optional(),
+  DROPBOX_FOLDER_PATH: z.string().default('/BASE_DOCUMENTAL'),
   GEMINI_API_KEY: z.string().optional(),
   EMBEDDING_MODEL: z.string().default('text-embedding-004'),
   EMBEDDING_DIMENSION: z.coerce.number().default(768),

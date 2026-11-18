@@ -27,11 +27,13 @@ async function main() {
   console.log('✅ Roles asegurados:', rolAdmin.nombre, rolSubadmin.nombre);
 
   // 2. Usuario Administrador inicial
+  const ADMIN_DEFAULT_ID = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
   const adminEmail = 'admin@correo.uts.edu.co';
   const adminUser = await prisma.usuario.upsert({
     where: { email: adminEmail },
     update: {},
     create: {
+      id: ADMIN_DEFAULT_ID,
       rolId: rolAdmin.id,
       nombreCompleto: 'Administrador General UTS',
       email: adminEmail,
@@ -44,12 +46,12 @@ async function main() {
 
   // 3. Carpeta raíz en Dropbox
   const carpetaRaiz = await prisma.carpeta.upsert({
-    where: { dropboxId: 'id:uts_root_folder_000' },
+    where: { dropboxId: 'id:UzVRN1oRKbMAAAAAAAAABw' },
     update: {},
     create: {
-      dropboxId: 'id:uts_root_folder_000',
-      nombre: 'UTS_DOCUMENTACION_OFICIAL',
-      rutaCompleta: '/UTS_DOCUMENTACION_OFICIAL',
+      dropboxId: 'id:UzVRN1oRKbMAAAAAAAAABw',
+      nombre: 'BASE_DOCUMENTAL',
+      rutaCompleta: '/BASE_DOCUMENTAL',
     },
   });
 

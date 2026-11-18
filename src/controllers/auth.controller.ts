@@ -1,7 +1,10 @@
+import crypto from 'crypto';
 import { type Request, type Response, type NextFunction } from 'express';
 import { prisma } from '../config/database.js';
+import { env } from '../config/env.js';
 import { AppError } from '../utils/appError.js';
 import { type LoginDTO, type CreateUserDTO } from '../dtos/auth.dto.js';
+import { type AuthUserPayload, type UserRole } from '../types/auth.types.js';
 
 export class AuthController {
   /**
@@ -25,10 +28,22 @@ export class AuthController {
         throw new AppError('Credenciales incorrectas', 401);
       }
 
+      const payload: AuthUserPayload = {
+        userId: user.id,
+        email: user.email,
+        rol: user.rol.nombre as UserRole,
+      };
+      const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+      const signature = crypto
+        .createHmac('sha256', env.JWT_SECRET)
+        .update(encodedPayload)
+        .digest('base64url');
+      const token = `${encodedPayload}.${signature}`;
+
       res.status(200).json({
         success: true,
         data: {
-          token: 'mock_jwt_token_uts_admin',
+          token,
           user: {
             id: user.id,
             nombreCompleto: user.nombreCompleto,

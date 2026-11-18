@@ -4,7 +4,7 @@ import { VitePluginNode } from 'vite-plugin-node';
 export default defineConfig({
     server: {
         // Puerto donde Vite levantará tu Express en modo desarrollo
-        port: 3000,
+        port: 4000,
     },
     plugins: [
         ...VitePluginNode({
