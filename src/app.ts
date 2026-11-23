@@ -1,9 +1,8 @@
 import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
 import { env } from './config/env.js';
 import { prisma } from './config/database.js';
 import { VectorRepository } from './repositories/vector.repository.js';
+import { DocumentRepository } from './repositories/document.repository.js';
 import { AIService } from './services/ai.service.js';
 import { SearchService } from './services/search.service.js';
 import { DropboxService } from './services/dropbox.service.js';
@@ -16,6 +15,8 @@ import { AuthController } from './controllers/auth.controller.js';
 import { AdminController } from './controllers/admin.controller.js';
 import { WebhookController } from './controllers/webhook.controller.js';
 
+import { corsMiddleware } from './middlewares/cors.middleware.js';
+import { helmetMiddleware } from './middlewares/helmet.middleware.js';
 import { validateRequest } from './middlewares/validator.middleware.js';
 import { errorHandler } from './middlewares/errorHandler.middleware.js';
 import { authenticateJWT } from './middlewares/auth.middleware.js';
@@ -23,12 +24,15 @@ import { requireRole } from './middlewares/rbac.middleware.js';
 import { auditQuery } from './middlewares/audit.middleware.js';
 import { publicApiRateLimiter, authRateLimiter } from './middlewares/rateLimit.middleware.js';
 import { validateDropboxWebhook } from './middlewares/dropboxWebhook.middleware.js';
+import { uploadDocumentFile } from './middlewares/upload.middleware.js';
 
 import { SearchQuerySchema } from './dtos/search.dto.js';
 import { LoginSchema, CreateUserSchema } from './dtos/auth.dto.js';
 import {
   UpdateDocumentMetadataSchema,
   LinkDropboxFileSchema,
+  CreateFolderSchema,
+  UpdateFolderSchema,
   AuditLogQuerySchema,
 } from './dtos/document.dto.js';
 
@@ -36,17 +40,13 @@ export const createApp = () => {
   const app = express();
 
   // 1. Capa de Seguridad de Cabeceras (Helmet) y CORS (Imagen 3)
-  app.use(
-    helmet({
-      contentSecurityPolicy: false, // Compatible con APIs REST
-      crossOriginEmbedderPolicy: false,
-    })
-  );
-  app.use(cors());
+  app.use(helmetMiddleware);
+  app.use(corsMiddleware);
   app.use(express.json());
 
   // 2. Inyección de Dependencias
   const vectorRepo = new VectorRepository(prisma);
+  const documentRepo = new DocumentRepository(prisma);
   const aiService = new AIService();
   const dropboxService = new DropboxService();
   const parserService = new ParserService();
@@ -55,7 +55,7 @@ export const createApp = () => {
 
   // 3. Controladores
   const searchController = new SearchController(searchService);
-  const documentController = new DocumentController(dropboxService);
+  const documentController = new DocumentController(dropboxService, documentRepo);
   const authController = new AuthController();
   const adminController = new AdminController(syncService);
   const webhookController = new WebhookController(syncService);
@@ -87,6 +87,42 @@ export const createApp = () => {
     '/api/documents/:id/download',
     publicApiRateLimiter,
     documentController.downloadDocument
+  );
+
+  // Carpetas institucionales sincronizadas desde Dropbox
+  app.get('/api/folders', publicApiRateLimiter, documentController.getFolders);
+  app.get('/api/folders/:id', publicApiRateLimiter, documentController.getFolderById);
+
+  // Archivos existentes en Dropbox dentro de una carpeta específica (para selector en UI Admin)
+  app.get(
+    '/api/folders/:id/dropbox-files',
+    authenticateJWT,
+    requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    documentController.getFolderDropboxFiles
+  );
+
+  // CRUD Administrativo de Carpetas en Dropbox y Base de Datos
+  app.post(
+    '/api/folders',
+    authenticateJWT,
+    requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    validateRequest(CreateFolderSchema, 'body'),
+    documentController.createFolder
+  );
+
+  app.patch(
+    '/api/folders/:id',
+    authenticateJWT,
+    requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    validateRequest(UpdateFolderSchema, 'body'),
+    documentController.updateFolder
+  );
+
+  app.delete(
+    '/api/folders/:id',
+    authenticateJWT,
+    requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    documentController.deleteFolder
   );
 
   // --- WEBHOOKS: NOTIFICACIONES AUTOMÁTICAS DE DROPBOX (Imagen 3) ---
@@ -130,20 +166,31 @@ export const createApp = () => {
     authController.createSubadmin
   );
 
-  // CU07: Registrar / Modificar metadatos de documentos
+  // CU07: Registrar / Modificar metadatos y reemplazar documento en Dropbox
   app.patch(
     '/api/documents/:id/metadata',
     authenticateJWT,
     requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    uploadDocumentFile,
     validateRequest(UpdateDocumentMetadataSchema, 'body'),
     documentController.updateMetadata
   );
 
-  // CU08: Cargar / asociar / vincular archivo en Dropbox
+  // CU08: Crear / asociar / vincular archivo en Dropbox con sus metadatos
   app.post(
     '/api/documents/link-dropbox',
     authenticateJWT,
     requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    uploadDocumentFile,
+    validateRequest(LinkDropboxFileSchema, 'body'),
+    documentController.linkDropboxFile
+  );
+
+  app.post(
+    '/api/documents',
+    authenticateJWT,
+    requireRole('ADMINISTRADOR', 'SUBADMINISTRADOR'),
+    uploadDocumentFile,
     validateRequest(LinkDropboxFileSchema, 'body'),
     documentController.linkDropboxFile
   );

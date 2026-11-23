@@ -9,6 +9,7 @@ try {
 const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  CORS_ORIGIN: z.string().default('http://localhost:3000'),
   DATABASE_URL: z.string().default('postgresql://uts_app_user:pass@localhost:5432/uts_documental'),
   JWT_SECRET: z.string().default('dev_jwt_secret_change_me_in_prod'),
   JWT_EXPIRES_IN: z.string().default('8h'),
